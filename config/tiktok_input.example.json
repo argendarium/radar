@@ -1,0 +1,7 @@
+{
+  "_nota": "Ejemplo orientativo. Reemplaza con el input real del actor elegido: python -m app.cli schema <actor_id>",
+  "country": "MX",
+  "period": 7,
+  "objective": "conversions",
+  "maxItems": 200
+}

@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/*.db
+config/tiktok_input.json
+.pytest_cache/
+*.zip
