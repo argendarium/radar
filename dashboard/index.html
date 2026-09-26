@@ -107,6 +107,9 @@ textarea { min-height: 70px; resize: vertical; }
 .margin { margin: 12px 0 14px; font-size: 14px; }
 .margin b { font-family: var(--display); font-size: 20px; }
 .margin .good { color: var(--win); } .margin .bad { color: var(--danger); }
+.ext-block { margin-bottom: 12px; font-size: 14px; }
+.ext-block strong { display: block; margin-bottom: 4px; }
+.ext-form { margin-top: 12px; }
 .savebar { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 .saved { color: var(--win); font-size: 13.5px; }
 .angle { font: 500 17px/1.4 var(--display); margin: 0 0 12px; }
@@ -252,6 +255,40 @@ function renderRows() {
   }).join("");
 }
 
+function renderExternalData(p) {
+  const e = p.enrichment;
+  const hasAmazon = !!(e && e.amazon_fetched_at);
+  const hasSourcing = !!(e && e.sourcing_fetched_at);
+  const amazonBlock = hasAmazon ? `<div class="ext-block">
+      <strong>Amazon</strong>
+      <div class="hint">${e.amazon_rating != null ? `${fmt(e.amazon_rating, 1)} ★ · ` : ""}${e.amazon_reviews_count ?? 0} reseñas${e.amazon_bought_last_month ? ` · ${esc(e.amazon_bought_last_month)}` : ""}</div>
+      ${e.amazon_price != null ? `<div class="num">US$${fmt(e.amazon_price, 2)}</div>` : ""}
+      ${safeUrl(e.amazon_url) ? `<a class="link" href="${esc(e.amazon_url)}" target="_blank" rel="noopener noreferrer">Ver en Amazon</a>` : ""}
+    </div>` : "";
+  const sourcingLabel = e && e.sourcing_source === "alibaba" ? "Alibaba" : "AliExpress";
+  const sourcingBlock = hasSourcing ? `<div class="ext-block">
+      <strong>${sourcingLabel}</strong>
+      <div class="hint">${e.sourcing_moq ? `MOQ ${e.sourcing_moq} · ` : ""}${esc(e.sourcing_supplier_name || "")}</div>
+      ${e.sourcing_price_unit != null ? `<div class="num">US$${fmt(e.sourcing_price_unit, 2)} <button class="link" type="button" id="use-sourcing-cost">Usar como costo proveedor</button></div>` : ""}
+      ${safeUrl(e.sourcing_url) ? `<a class="link" href="${esc(e.sourcing_url)}" target="_blank" rel="noopener noreferrer">Ver publicación</a>` : ""}
+    </div>` : "";
+  const stamps = [hasAmazon && `Amazon ${timeAgo(e.amazon_fetched_at)}`, hasSourcing && `Sourcing ${timeAgo(e.sourcing_fetched_at)}`]
+    .filter(Boolean).join(" · ");
+  return `<div class="dsec">
+    <h3>Datos externos</h3>
+    ${amazonBlock}${sourcingBlock}
+    ${stamps ? `<div class="hint">${stamps}</div>` : (hasAmazon || hasSourcing ? "" : `<p class="hint">Pega el link de Amazon y/o de AliExpress o Alibaba para traer números reales de este candidato.</p>`)}
+    <button class="btn" type="button" id="btn-analyze" style="margin-top:10px">${hasAmazon || hasSourcing ? "Re-analizar" : "Analizar"}</button>
+    <div class="ext-form" id="analyze-form" hidden>
+      <div class="fields">
+        <label>Link de Amazon<input type="url" id="an-amazon" placeholder="https://amazon.com/..."></label>
+        <label>Link de AliExpress o Alibaba<input type="url" id="an-sourcing" placeholder="https://aliexpress.com/..."></label>
+      </div>
+      <div class="savebar"><button class="btn primary" type="button" id="an-submit">Analizar</button><span id="an-msg" aria-live="polite"></span></div>
+    </div>
+  </div>`;
+}
+
 function renderDetail(p) {
   const grid = $("grid");
   grid.classList.add("has-detail");
@@ -292,6 +329,8 @@ function renderDetail(p) {
       <div class="savebar"><button class="btn primary" type="button" id="save">Guardar cambios</button><span id="save-msg" aria-live="polite"></span></div>
     </div>
 
+    ${renderExternalData(p)}
+
     ${p.angle || (p.hooks && p.hooks.length) ? `<div class="dsec">
       <h3>Ángulo de venta</h3>
       ${p.angle ? `<p class="angle">${esc(p.angle)}</p>` : ""}
@@ -322,6 +361,27 @@ function renderDetail(p) {
   $("f-cost").addEventListener("input", updateMargin);
   $("f-price").addEventListener("input", updateMargin);
   updateMargin();
+
+  const useCostBtn = $("use-sourcing-cost");
+  if (useCostBtn) useCostBtn.addEventListener("click", () => {
+    $("f-cost").value = p.enrichment.sourcing_price_unit;
+    updateMargin();
+  });
+  const analyzeForm = $("analyze-form");
+  $("btn-analyze").addEventListener("click", () => { analyzeForm.hidden = !analyzeForm.hidden; });
+  $("an-submit").addEventListener("click", async () => {
+    const btn = $("an-submit"), msg = $("an-msg");
+    const amazonUrl = $("an-amazon").value.trim(), sourcingUrl = $("an-sourcing").value.trim();
+    if (!amazonUrl && !sourcingUrl) { msg.textContent = "Pega al menos un link"; msg.style.color = "var(--danger)"; return; }
+    btn.disabled = true; msg.textContent = "Analizando..."; msg.style.color = "";
+    try {
+      const result = await api(`/api/products/${p.id}/analyze`, { method: "POST", body: JSON.stringify({
+        amazon_url: amazonUrl || null, sourcing_url: sourcingUrl || null }) });
+      const errors = [result.amazon, result.sourcing].filter((r) => r.status === "error").map((r) => r.message);
+      if (errors.length) { msg.textContent = errors.join(" · "); msg.style.color = "var(--danger)"; btn.disabled = false; }
+      else { await selectProduct(p.id); }
+    } catch (err) { msg.textContent = `No se pudo analizar: ${err.message}`; msg.style.color = "var(--danger)"; btn.disabled = false; }
+  });
 
   let chosen = p.status;
   $("f-status").addEventListener("click", (e) => {
