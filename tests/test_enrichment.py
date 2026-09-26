@@ -139,3 +139,65 @@ def test_fetch_amazon_signal_invalid_url():
 
     with pytest.raises(amazon.AmazonProviderError):
         amazon.fetch_amazon_signal("https://www.amazon.com/s?k=algo")
+
+
+def test_sign_is_deterministic():
+    from app.services.providers.aliexpress import _sign
+
+    params_a = {"b": "2", "a": "1"}
+    params_b = {"a": "1", "b": "2"}
+    assert _sign(params_a, "secret") == _sign(params_b, "secret")
+    assert _sign(params_a, "secret") == _sign(params_a, "secret").upper()
+
+
+def test_fetch_sourcing_signal_aliexpress(monkeypatch):
+    from app.services.providers import aliexpress
+
+    monkeypatch.setattr(aliexpress, "settings", type("S", (), {
+        "aliexpress_app_key": "key", "aliexpress_app_secret": "secret", "aliexpress_tracking_id": "track"})())
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"aliexpress_affiliate_productdetail_get_response": {"resp_result": {"result": {
+                "products": {"product": [{"target_sale_price": "1.78", "shop_url": "https://aliexpress.com/store/123"}]}
+            }}}}
+
+    def fake_post(url, data=None, timeout=None):
+        assert data["method"] == "aliexpress.affiliate.productdetail.get"
+        assert data["product_ids"] == "1005006123456789"
+        assert "sign" in data
+        return FakeResponse()
+
+    monkeypatch.setattr(aliexpress.httpx, "post", fake_post)
+    result = aliexpress.fetch_sourcing_signal("https://es.aliexpress.com/item/1005006123456789.html")
+    assert result["price_unit"] == 1.78
+    assert result["supplier_name"] == "https://aliexpress.com/store/123"
+    assert result["moq"] is None
+
+
+def test_fetch_sourcing_signal_aliexpress_not_found(monkeypatch):
+    from app.services.providers import aliexpress
+
+    monkeypatch.setattr(aliexpress, "settings", type("S", (), {
+        "aliexpress_app_key": "key", "aliexpress_app_secret": "secret", "aliexpress_tracking_id": "track"})())
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"aliexpress_affiliate_productdetail_get_response": {"resp_result": {"result": {"products": {}}}}}
+
+    monkeypatch.setattr(aliexpress.httpx, "post", lambda *a, **k: FakeResponse())
+    with pytest.raises(aliexpress.AliexpressProviderError):
+        aliexpress.fetch_sourcing_signal("https://es.aliexpress.com/item/1005006123456789.html")
+
+
+def test_fetch_sourcing_signal_aliexpress_missing_keys(monkeypatch):
+    from app.services.providers import aliexpress
+
+    monkeypatch.setattr(aliexpress, "settings", type("S", (), {
+        "aliexpress_app_key": "", "aliexpress_app_secret": "", "aliexpress_tracking_id": ""})())
+    with pytest.raises(aliexpress.AliexpressProviderError):
+        aliexpress.fetch_sourcing_signal("https://es.aliexpress.com/item/1005006123456789.html")
