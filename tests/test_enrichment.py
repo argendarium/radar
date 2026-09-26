@@ -239,3 +239,94 @@ def test_fetch_sourcing_signal_alibaba_missing_actor(monkeypatch):
         "alibaba_apify_actor_id": "", "alibaba_max_charge_usd": 0.05})())
     with pytest.raises(alibaba.AlibabaProviderError):
         alibaba.fetch_sourcing_signal("https://www.alibaba.com/product-detail/thing_123.html")
+
+
+def test_analyze_requires_at_least_one_url():
+    from app.db import Product, init_db, session_scope
+    from app.services import enrichment
+
+    init_db()
+    with session_scope() as s:
+        product = Product(slug=slugify("producto sin links"), name="producto sin links")
+        s.add(product)
+        s.flush()
+        with pytest.raises(ValueError):
+            enrichment.analyze(product, None, None)
+        product_id = product.id
+
+    # Cleanup: evitar contaminar la base compartida de tests
+    with session_scope() as s:
+        s.execute(delete(Product).where(Product.id == product_id))
+        s.flush()
+
+
+def test_analyze_partial_failure(monkeypatch):
+    from sqlalchemy import select
+
+    from app.db import Product, init_db, session_scope
+    from app.services import enrichment
+    from app.services.providers import aliexpress, amazon
+
+    init_db()
+    monkeypatch.setattr(amazon, "fetch_amazon_signal",
+                        lambda url: (_ for _ in ()).throw(amazon.AmazonProviderError("sin llave")))
+    monkeypatch.setattr(aliexpress, "fetch_sourcing_signal",
+                        lambda url: {"price_unit": 1.5, "supplier_name": "X", "moq": None, "raw": {}})
+
+    with session_scope() as s:
+        product = Product(slug=slugify("producto analyze parcial"), name="producto analyze parcial")
+        s.add(product)
+        s.flush()
+        result = enrichment.analyze(product, "https://amazon.com/dp/B0D1XCVTPB",
+                                    "https://aliexpress.com/item/123.html")
+        product_id = product.id
+
+    assert result["amazon"]["status"] == "error"
+    assert result["sourcing"]["status"] == "ok"
+    assert result["sourcing"]["price_unit"] == 1.5
+    assert "raw" not in result["amazon"] and "raw" not in result["sourcing"]
+
+    with session_scope() as s:
+        product = s.scalar(select(Product).where(Product.id == product_id))
+        assert product.enrichment.sourcing_price_unit == 1.5
+        assert product.enrichment.amazon_price is None
+
+    # Cleanup: evitar contaminar la base compartida de tests
+    with session_scope() as s:
+        s.execute(delete(ProductEnrichment).where(ProductEnrichment.product_id == product_id))
+        s.execute(delete(Product).where(Product.id == product_id))
+        s.flush()
+
+
+def test_analyze_no_row_when_both_fail(monkeypatch):
+    from sqlalchemy import select
+
+    from app.db import Product, init_db, session_scope
+    from app.services import enrichment
+    from app.services.providers import aliexpress, amazon
+
+    init_db()
+    monkeypatch.setattr(amazon, "fetch_amazon_signal",
+                        lambda url: (_ for _ in ()).throw(amazon.AmazonProviderError("sin llave")))
+    monkeypatch.setattr(aliexpress, "fetch_sourcing_signal",
+                        lambda url: (_ for _ in ()).throw(aliexpress.AliexpressProviderError("sin llave")))
+
+    with session_scope() as s:
+        product = Product(slug=slugify("producto ambos fallan"), name="producto ambos fallan")
+        s.add(product)
+        s.flush()
+        result = enrichment.analyze(product, "https://amazon.com/dp/B0D1XCVTPB",
+                                    "https://aliexpress.com/item/123.html")
+        product_id = product.id
+
+    assert result["amazon"]["status"] == "error"
+    assert result["sourcing"]["status"] == "error"
+
+    with session_scope() as s:
+        product = s.scalar(select(Product).where(Product.id == product_id))
+        assert product.enrichment is None
+
+    # Cleanup: evitar contaminar la base compartida de tests
+    with session_scope() as s:
+        s.execute(delete(Product).where(Product.id == product_id))
+        s.flush()
