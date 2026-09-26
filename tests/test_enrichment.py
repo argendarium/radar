@@ -330,3 +330,59 @@ def test_analyze_no_row_when_both_fail(monkeypatch):
     with session_scope() as s:
         s.execute(delete(Product).where(Product.id == product_id))
         s.flush()
+
+
+def test_analyze_endpoint_validation():
+    from fastapi.testclient import TestClient
+
+    from app.api.main import app
+    from app.demo import seed
+
+    with TestClient(app) as client:
+        seed()
+        pid = client.get("/api/products").json()[0]["id"]
+        assert client.post(f"/api/products/{pid}/analyze", json={}).status_code == 400
+        assert client.post("/api/products/999999/analyze", json={"amazon_url": "x"}).status_code == 404
+
+
+def test_analyze_endpoint_happy_path(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.api.main import app
+    from app.demo import seed
+    from app.services import enrichment
+
+    monkeypatch.setattr(enrichment, "analyze", lambda product, amazon_url, sourcing_url: {
+        "amazon": {"status": "ok", "price": 31.99, "rating": 4.0, "reviews_count": 89, "bought_last_month": "5K+"},
+        "sourcing": {"status": "skipped"},
+    })
+
+    with TestClient(app) as client:
+        seed()
+        pid = client.get("/api/products").json()[0]["id"]
+        resp = client.post(f"/api/products/{pid}/analyze", json={"amazon_url": "https://amazon.com/dp/B0D1XCVTPB"})
+        assert resp.status_code == 200
+        assert resp.json()["amazon"]["price"] == 31.99
+        detail = client.get(f"/api/products/{pid}").json()
+        assert "enrichment" in detail  # el mock no persiste nada: sigue None, pero la llave debe existir
+        assert detail["enrichment"] is None
+
+
+def test_get_product_includes_saved_enrichment():
+    from sqlalchemy import select
+
+    from app.api.main import app
+    from app.db import Product, ProductEnrichment, session_scope
+    from app.demo import seed
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        seed()
+        pid = client.get("/api/products").json()[0]["id"]
+        with session_scope() as s:
+            product = s.scalar(select(Product).where(Product.id == pid))
+            product.enrichment = ProductEnrichment(product_id=pid, amazon_price=31.99, amazon_rating=4.0,
+                                                    sourcing_source="aliexpress", sourcing_price_unit=1.78)
+        detail = client.get(f"/api/products/{pid}").json()
+        assert detail["enrichment"]["amazon_price"] == 31.99
+        assert detail["enrichment"]["sourcing_source"] == "aliexpress"
