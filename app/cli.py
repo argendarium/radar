@@ -5,6 +5,7 @@
   python -m app.cli run collect-meta | collect-tiktok | normalize | score | notify | pipeline
   python -m app.cli schema apify/facebook-ads-scraper
   python -m app.cli top
+  python -m app.cli analyze <product_id> --amazon-url URL --sourcing-url URL
   python -m app.cli serve
 """
 from __future__ import annotations
@@ -65,6 +66,10 @@ def main() -> None:
     schema.add_argument("actor_id")
     top = sub.add_parser("top")
     top.add_argument("--limit", type=int, default=10)
+    analyze = sub.add_parser("analyze")
+    analyze.add_argument("product_id", type=int)
+    analyze.add_argument("--amazon-url", default=None)
+    analyze.add_argument("--sourcing-url", default=None)
     serve = sub.add_parser("serve")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
@@ -84,6 +89,18 @@ def main() -> None:
         cmd_schema(args.actor_id)
     elif args.command == "top":
         cmd_top(args.limit)
+    elif args.command == "analyze":
+        from sqlalchemy import select
+
+        from app.db import Product, session_scope
+        from app.services import enrichment
+
+        with session_scope() as s:
+            product = s.scalar(select(Product).where(Product.id == args.product_id))
+            if not product:
+                raise SystemExit(f"Producto {args.product_id} no encontrado")
+            result = enrichment.analyze(product, args.amazon_url, args.sourcing_url)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     elif args.command == "serve":
         import uvicorn
         uvicorn.run("app.api.main:app", host=args.host, port=args.port, reload=False)
