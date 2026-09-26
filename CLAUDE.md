@@ -21,7 +21,7 @@ app/
   services/normalizer.py anuncio -> producto agrupado (Claude visión + texto)
   services/scorer.py     score = 0.35 longevidad + 0.25 copias + 0.20 intensidad + 0.20 viabilidad, con penalizaciones
   services/notify.py     top 3 diario por Telegram
-  services/enrichment.py orquesta el analisis on-demand (Amazon + AliExpress/Alibaba) de un candidato
+  services/enrichment.py orquesta el análisis on-demand (Amazon + AliExpress/Alibaba) de un candidato
   services/providers/    un modulo por fuente externa: amazon.py, aliexpress.py, alibaba.py, urls.py
   jobs.py                orquestación y registro de ejecuciones (tabla runs)
   api/main.py            API REST + dashboard
@@ -69,8 +69,8 @@ Sin make: `python -m venv .venv && .venv/bin/pip install -r requirements.txt` y 
 7. Programar cron diario: `0 6 * * * cd /ruta/radar && .venv/bin/python -m app.cli run pipeline`
 
 ## Próximos pasos (en orden)
-1. Enriquecimiento on-demand con Amazon (RapidAPI) y AliExpress/Alibaba: hecho. Falta cargar RAPIDAPI_TOKEN,
-   ALIEXPRESS_APP_KEY/APP_SECRET y ALIBABA_APIFY_ACTOR_ID reales en .env para probarlo con datos reales.
+1. Enriquecimiento on-demand con Amazon (RapidAPI) y AliExpress/Alibaba: hecho. Falta cargar RAPIDAPI_KEY,
+   ALIEXPRESS_APP_KEY/APP_SECRET, ALIEXPRESS_TRACKING_ID y ALIBABA_APIFY_ACTOR_ID reales en .env para probarlo con datos reales.
 2. Postgres + `psycopg[binary]` y docker compose con un contenedor por servicio
 3. Aprendizaje: usar resultados de productos en prueba (estado ganador o descartado) para recalibrar pesos del score
 4. Análisis de comentarios de anuncios para medir intención de compra
