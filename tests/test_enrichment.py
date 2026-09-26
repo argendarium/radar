@@ -201,3 +201,41 @@ def test_fetch_sourcing_signal_aliexpress_missing_keys(monkeypatch):
         "aliexpress_app_key": "", "aliexpress_app_secret": "", "aliexpress_tracking_id": ""})())
     with pytest.raises(aliexpress.AliexpressProviderError):
         aliexpress.fetch_sourcing_signal("https://es.aliexpress.com/item/1005006123456789.html")
+
+
+def test_fetch_sourcing_signal_alibaba(monkeypatch):
+    from app.services.providers import alibaba
+
+    monkeypatch.setattr(alibaba, "settings", type("S", (), {
+        "alibaba_apify_actor_id": "some/actor", "alibaba_max_charge_usd": 0.05})())
+    fake_item = {"title": "Producto de prueba", "price": "$1.99", "minOrder": 10, "supplierName": "Proveedor X"}
+    monkeypatch.setattr(
+        alibaba, "run_actor",
+        lambda actor_id, run_input, max_items=None, max_charge_usd=None: iter([fake_item]),
+    )
+    result = alibaba.fetch_sourcing_signal("https://www.alibaba.com/product-detail/thing_123.html")
+    assert result["price_unit"] == 1.99
+    assert result["moq"] == 10
+    assert result["supplier_name"] == "Proveedor X"
+
+
+def test_fetch_sourcing_signal_alibaba_no_results(monkeypatch):
+    from app.services.providers import alibaba
+
+    monkeypatch.setattr(alibaba, "settings", type("S", (), {
+        "alibaba_apify_actor_id": "some/actor", "alibaba_max_charge_usd": 0.05})())
+    monkeypatch.setattr(
+        alibaba, "run_actor",
+        lambda actor_id, run_input, max_items=None, max_charge_usd=None: iter([]),
+    )
+    with pytest.raises(alibaba.AlibabaProviderError):
+        alibaba.fetch_sourcing_signal("https://www.alibaba.com/product-detail/thing_123.html")
+
+
+def test_fetch_sourcing_signal_alibaba_missing_actor(monkeypatch):
+    from app.services.providers import alibaba
+
+    monkeypatch.setattr(alibaba, "settings", type("S", (), {
+        "alibaba_apify_actor_id": "", "alibaba_max_charge_usd": 0.05})())
+    with pytest.raises(alibaba.AlibabaProviderError):
+        alibaba.fetch_sourcing_signal("https://www.alibaba.com/product-detail/thing_123.html")

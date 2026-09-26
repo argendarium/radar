@@ -43,17 +43,19 @@ def _attr(obj: Any, *names: str) -> Any:
     return None
 
 
-def run_actor(actor_id: str, run_input: dict, max_items: int | None = None) -> Iterator[dict]:
+def run_actor(actor_id: str, run_input: dict, max_items: int | None = None,
+              max_charge_usd: float | None = None) -> Iterator[dict]:
     """Ejecuta un actor de Apify, espera a que termine y devuelve sus items."""
     if not settings.apify_token:
         raise CollectorError("Falta APIFY_TOKEN en .env")
     from apify_client import ApifyClient
 
     client = ApifyClient(settings.apify_token)
+    charge = max_charge_usd if max_charge_usd is not None else settings.apify_max_charge_usd
     run = client.actor(actor_id).call(
         run_input=run_input,
         max_items=max_items,
-        max_total_charge_usd=Decimal(str(settings.apify_max_charge_usd)),
+        max_total_charge_usd=Decimal(str(charge)),
     )
     if run is None:
         raise CollectorError(f"El actor {actor_id} no devolvió una ejecución")
