@@ -68,5 +68,13 @@ class Settings:
     telegram_bot_token: str = _env("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id: str = _env("TELEGRAM_CHAT_ID", "")
 
+    # Analizador de producto: fuentes externas on-demand (opcional)
+    rapidapi_key: str = _env("RAPIDAPI_KEY", "")
+    aliexpress_app_key: str = _env("ALIEXPRESS_APP_KEY", "")
+    aliexpress_app_secret: str = _env("ALIEXPRESS_APP_SECRET", "")
+    aliexpress_tracking_id: str = _env("ALIEXPRESS_TRACKING_ID", "")
+    alibaba_apify_actor_id: str = _env("ALIBABA_APIFY_ACTOR_ID", "")
+    alibaba_max_charge_usd: float = _float("ALIBABA_MAX_CHARGE_USD", 0.05)
+
 
 settings = Settings()

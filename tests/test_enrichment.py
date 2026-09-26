@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import delete, select
 
 from app.db import Product, ProductEnrichment, init_db, session_scope
-from app.mapping import slugify
+from app.mapping import slugify, to_float
 from app.services.providers.urls import UrlError, detect_source, extract_aliexpress_product_id, extract_amazon_asin
 
 
@@ -61,3 +61,59 @@ def test_extract_aliexpress_product_id():
 def test_extract_aliexpress_product_id_invalid():
     with pytest.raises(UrlError):
         extract_aliexpress_product_id("https://es.aliexpress.com/store/123456")
+
+
+def test_to_float():
+    assert to_float("$31.99") == 31.99
+    assert to_float("4.0") == 4.0
+    assert to_float(None) is None
+    assert to_float("") is None
+
+
+def test_fetch_amazon_signal(monkeypatch):
+    from app.services.providers import amazon
+
+    monkeypatch.setattr(amazon, "settings", type("S", (), {"rapidapi_key": "test-key"})())
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"data": {"asin": "B0D1XCVTPB", "product_price": "$31.99", "product_star_rating": "4.0",
+                             "product_num_ratings": 89, "sales_volume": "5K+ bought in past month"}}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        assert params["asin"] == "B0D1XCVTPB"
+        assert headers["x-rapidapi-key"] == "test-key"
+        return FakeResponse()
+
+    monkeypatch.setattr(amazon.httpx, "get", fake_get)
+    result = amazon.fetch_amazon_signal("https://www.amazon.com/dp/B0D1XCVTPB")
+    assert result["price"] == 31.99
+    assert result["rating"] == 4.0
+    assert result["reviews_count"] == 89
+    assert result["bought_last_month"] == "5K+ bought in past month"
+
+
+def test_fetch_amazon_signal_missing_key(monkeypatch):
+    from app.services.providers import amazon
+
+    monkeypatch.setattr(amazon, "settings", type("S", (), {"rapidapi_key": ""})())
+    with pytest.raises(amazon.AmazonProviderError):
+        amazon.fetch_amazon_signal("https://www.amazon.com/dp/B0D1XCVTPB")
+
+
+def test_fetch_amazon_signal_rate_limited(monkeypatch):
+    from app.services.providers import amazon
+
+    monkeypatch.setattr(amazon, "settings", type("S", (), {"rapidapi_key": "test-key"})())
+
+    class RateLimited:
+        status_code = 429
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(amazon.httpx, "get", lambda *a, **k: RateLimited())
+    with pytest.raises(amazon.AmazonProviderError):
+        amazon.fetch_amazon_signal("https://www.amazon.com/dp/B0D1XCVTPB")
