@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.config import ROOT, settings
 from app.db import STATUSES, Ad, Product, Run, init_db, session_scope
 from app.jobs import JOBS, execute, start_run
-from app.services import scorer
+from app.services import enrichment, scorer
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -51,7 +51,7 @@ def product_detail(p: Product) -> dict:
         "has_sizes": p.has_sizes, "fragile": p.fragile, "weight": p.weight,
         "viability_ai": p.viability_ai, "price_detected": p.price_detected, "price_currency": p.price_currency,
         "supplier_cost_usd": p.supplier_cost_usd, "sale_price_dop": p.sale_price_dop, "notes": p.notes,
-        "usd_to_dop": settings.usd_to_dop,
+        "usd_to_dop": settings.usd_to_dop, "enrichment": enrichment_dict(p),
         "ads": [
             {"id": a.id, "source": a.source, "external_id": a.external_id, "country": a.country,
              "advertiser": a.advertiser, "text": a.text,
@@ -64,11 +64,30 @@ def product_detail(p: Product) -> dict:
     return data
 
 
+def enrichment_dict(p: Product) -> dict | None:
+    e = p.enrichment
+    if not e:
+        return None
+    return {
+        "amazon_url": e.amazon_url, "amazon_price": e.amazon_price, "amazon_rating": e.amazon_rating,
+        "amazon_reviews_count": e.amazon_reviews_count, "amazon_bought_last_month": e.amazon_bought_last_month,
+        "amazon_fetched_at": _iso(e.amazon_fetched_at),
+        "sourcing_source": e.sourcing_source, "sourcing_url": e.sourcing_url,
+        "sourcing_price_unit": e.sourcing_price_unit, "sourcing_moq": e.sourcing_moq,
+        "sourcing_supplier_name": e.sourcing_supplier_name, "sourcing_fetched_at": _iso(e.sourcing_fetched_at),
+    }
+
+
 class ProductUpdate(BaseModel):
     status: str | None = None
     supplier_cost_usd: float | None = Field(default=None, ge=0)
     sale_price_dop: float | None = Field(default=None, ge=0)
     notes: str | None = None
+
+
+class AnalyzeRequest(BaseModel):
+    amazon_url: str | None = None
+    sourcing_url: str | None = None
 
 
 @app.get("/api/health")
@@ -137,6 +156,20 @@ def update_product(product_id: int, payload: ProductUpdate) -> dict:
         scorer.apply(p)
         s.flush()
         return product_detail(p)
+
+
+@app.post("/api/products/{product_id}/analyze")
+def analyze_product(product_id: int, payload: AnalyzeRequest) -> dict:
+    with session_scope() as s:
+        p = s.scalar(select(Product).options(selectinload(Product.ads)).where(Product.id == product_id))
+        if not p:
+            raise HTTPException(404, "Producto no encontrado")
+        try:
+            result = enrichment.analyze(p, payload.amazon_url, payload.sourcing_url)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        s.flush()
+        return result
 
 
 @app.post("/api/jobs/{kind}", status_code=202)

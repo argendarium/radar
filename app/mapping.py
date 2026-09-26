@@ -53,6 +53,18 @@ def to_int(value: Any) -> int | None:
     return int(number)
 
 
+def to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    digits = re.sub(r"[^\d.]", "", str(value))
+    try:
+        return float(digits) if digits else None
+    except ValueError:
+        return None
+
+
 def to_datetime(value: Any) -> datetime | None:
     if value in (None, ""):
         return None
