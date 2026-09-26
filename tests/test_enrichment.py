@@ -117,3 +117,25 @@ def test_fetch_amazon_signal_rate_limited(monkeypatch):
     monkeypatch.setattr(amazon.httpx, "get", lambda *a, **k: RateLimited())
     with pytest.raises(amazon.AmazonProviderError):
         amazon.fetch_amazon_signal("https://www.amazon.com/dp/B0D1XCVTPB")
+
+
+def test_fetch_amazon_signal_malformed_response(monkeypatch):
+    from app.services.providers import amazon
+
+    monkeypatch.setattr(amazon, "settings", type("S", (), {"rapidapi_key": "test-key"})())
+
+    class BadResponse:
+        status_code = 200
+        def json(self):
+            return {"data": "not-a-dict"}
+
+    monkeypatch.setattr(amazon.httpx, "get", lambda *a, **k: BadResponse())
+    with pytest.raises(amazon.AmazonProviderError):
+        amazon.fetch_amazon_signal("https://www.amazon.com/dp/B0D1XCVTPB")
+
+
+def test_fetch_amazon_signal_invalid_url():
+    from app.services.providers import amazon
+
+    with pytest.raises(amazon.AmazonProviderError):
+        amazon.fetch_amazon_signal("https://www.amazon.com/s?k=algo")

@@ -5,7 +5,7 @@ import httpx
 
 from app.config import settings
 from app.mapping import to_float, to_int
-from app.services.providers.urls import extract_amazon_asin
+from app.services.providers.urls import UrlError, extract_amazon_asin
 
 RAPIDAPI_HOST = "real-time-amazon-data.p.rapidapi.com"
 
@@ -17,7 +17,10 @@ class AmazonProviderError(RuntimeError):
 def fetch_amazon_signal(url: str) -> dict:
     if not settings.rapidapi_key:
         raise AmazonProviderError("Falta RAPIDAPI_KEY en .env")
-    asin = extract_amazon_asin(url)
+    try:
+        asin = extract_amazon_asin(url)
+    except UrlError as exc:
+        raise AmazonProviderError(str(exc)) from exc
     try:
         resp = httpx.get(
             f"https://{RAPIDAPI_HOST}/product-details",
@@ -31,13 +34,16 @@ def fetch_amazon_signal(url: str) -> dict:
         raise AmazonProviderError("Límite mensual de Amazon alcanzado (tier gratis de RapidAPI)")
     if resp.status_code != 200:
         raise AmazonProviderError(f"Amazon respondió {resp.status_code}")
-    data = (resp.json() or {}).get("data") or {}
-    if not data:
-        raise AmazonProviderError("Amazon no encontró ese producto")
-    return {
-        "price": to_float(data.get("product_price")),
-        "rating": to_float(data.get("product_star_rating")),
-        "reviews_count": to_int(data.get("product_num_ratings")),
-        "bought_last_month": data.get("sales_volume"),
-        "raw": data,
-    }
+    try:
+        data = (resp.json() or {}).get("data") or {}
+        if not data:
+            raise AmazonProviderError("Amazon no encontró ese producto")
+        return {
+            "price": to_float(data.get("product_price")),
+            "rating": to_float(data.get("product_star_rating")),
+            "reviews_count": to_int(data.get("product_num_ratings")),
+            "bought_last_month": data.get("sales_volume"),
+            "raw": data,
+        }
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise AmazonProviderError(f"Amazon devolvió una respuesta inesperada: {exc}") from exc
