@@ -386,3 +386,8 @@ def test_get_product_includes_saved_enrichment():
         detail = client.get(f"/api/products/{pid}").json()
         assert detail["enrichment"]["amazon_price"] == 31.99
         assert detail["enrichment"]["sourcing_source"] == "aliexpress"
+
+    # Cleanup: evitar contaminar la base compartida de tests
+    with session_scope() as s:
+        s.execute(delete(ProductEnrichment).where(ProductEnrichment.product_id == pid))
+        s.flush()
