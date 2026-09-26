@@ -67,6 +67,7 @@ class Product(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
     ads: Mapped[list["Ad"]] = relationship(back_populates="product")
+    enrichment: Mapped["ProductEnrichment | None"] = relationship(back_populates="product", uselist=False)
 
 
 class Ad(Base):
@@ -94,6 +95,33 @@ class Ad(Base):
     normalized_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), index=True)
     product: Mapped[Product | None] = relationship(back_populates="ads")
+
+
+class ProductEnrichment(Base):
+    """Números externos de un producto candidato, traídos on-demand desde un link pegado por el operador."""
+    __tablename__ = "product_enrichment"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), unique=True, index=True)
+
+    amazon_url: Mapped[str | None] = mapped_column(Text)
+    amazon_price: Mapped[float | None] = mapped_column(Float)
+    amazon_rating: Mapped[float | None] = mapped_column(Float)
+    amazon_reviews_count: Mapped[int | None] = mapped_column(Integer)
+    amazon_bought_last_month: Mapped[str | None] = mapped_column(String(40))
+    amazon_fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    sourcing_source: Mapped[str | None] = mapped_column(String(20))  # aliexpress | alibaba
+    sourcing_url: Mapped[str | None] = mapped_column(Text)
+    sourcing_price_unit: Mapped[float | None] = mapped_column(Float)
+    sourcing_moq: Mapped[int | None] = mapped_column(Integer)
+    sourcing_supplier_name: Mapped[str | None] = mapped_column(String(200))
+    sourcing_fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    raw_amazon: Mapped[dict | None] = mapped_column(JSON)
+    raw_sourcing: Mapped[dict | None] = mapped_column(JSON)
+
+    product: Mapped[Product] = relationship(back_populates="enrichment")
 
 
 class Run(Base):
