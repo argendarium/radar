@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Iterator
 
@@ -44,7 +44,7 @@ def _attr(obj: Any, *names: str) -> Any:
 
 
 def run_actor(actor_id: str, run_input: dict, max_items: int | None = None,
-              max_charge_usd: float | None = None) -> Iterator[dict]:
+              max_charge_usd: float | None = None, run_timeout_secs: int | None = None) -> Iterator[dict]:
     """Ejecuta un actor de Apify, espera a que termine y devuelve sus items."""
     if not settings.apify_token:
         raise CollectorError("Falta APIFY_TOKEN en .env")
@@ -56,6 +56,7 @@ def run_actor(actor_id: str, run_input: dict, max_items: int | None = None,
         run_input=run_input,
         max_items=max_items,
         max_total_charge_usd=Decimal(str(charge)),
+        run_timeout=timedelta(seconds=run_timeout_secs) if run_timeout_secs is not None else None,
     )
     if run is None:
         raise CollectorError(f"El actor {actor_id} no devolvió una ejecución")

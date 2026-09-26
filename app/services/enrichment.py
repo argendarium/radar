@@ -14,6 +14,10 @@ def _result(status: str, **extra) -> dict:
     return {"status": status, **extra}
 
 
+def _clip(value, length: int) -> str | None:
+    return str(value)[:length] if value is not None else None
+
+
 def _fetch_amazon(url: str | None) -> dict:
     if not url:
         return _result("skipped")
@@ -56,7 +60,7 @@ def analyze(product: Product, amazon_url: str | None, sourcing_url: str | None) 
             enrichment.amazon_price = amazon_result.get("price")
             enrichment.amazon_rating = amazon_result.get("rating")
             enrichment.amazon_reviews_count = amazon_result.get("reviews_count")
-            enrichment.amazon_bought_last_month = amazon_result.get("bought_last_month")
+            enrichment.amazon_bought_last_month = _clip(amazon_result.get("bought_last_month"), 40)
             enrichment.raw_amazon = amazon_result.get("raw")
             enrichment.amazon_fetched_at = now
         if sourcing_result["status"] == "ok":
@@ -64,7 +68,7 @@ def analyze(product: Product, amazon_url: str | None, sourcing_url: str | None) 
             enrichment.sourcing_url = sourcing_url
             enrichment.sourcing_price_unit = sourcing_result.get("price_unit")
             enrichment.sourcing_moq = sourcing_result.get("moq")
-            enrichment.sourcing_supplier_name = sourcing_result.get("supplier_name")
+            enrichment.sourcing_supplier_name = _clip(sourcing_result.get("supplier_name"), 200)
             enrichment.raw_sourcing = sourcing_result.get("raw")
             enrichment.sourcing_fetched_at = now
         product.enrichment = enrichment

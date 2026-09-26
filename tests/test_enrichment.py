@@ -209,14 +209,19 @@ def test_fetch_sourcing_signal_alibaba(monkeypatch):
     monkeypatch.setattr(alibaba, "settings", type("S", (), {
         "alibaba_apify_actor_id": "some/actor", "alibaba_max_charge_usd": 0.05})())
     fake_item = {"title": "Producto de prueba", "price": "$1.99", "minOrder": 10, "supplierName": "Proveedor X"}
-    monkeypatch.setattr(
-        alibaba, "run_actor",
-        lambda actor_id, run_input, max_items=None, max_charge_usd=None: iter([fake_item]),
-    )
+    captured_kwargs = {}
+
+    def fake_run_actor(actor_id, run_input, max_items=None, max_charge_usd=None, **kwargs):
+        captured_kwargs.update(kwargs)
+        return iter([fake_item])
+
+    monkeypatch.setattr(alibaba, "run_actor", fake_run_actor)
     result = alibaba.fetch_sourcing_signal("https://www.alibaba.com/product-detail/thing_123.html")
     assert result["price_unit"] == 1.99
     assert result["moq"] == 10
     assert result["supplier_name"] == "Proveedor X"
+    # Finding 5: la llamada debe acotar el tiempo de espera del actor de Apify.
+    assert captured_kwargs.get("run_timeout_secs") == 45
 
 
 def test_fetch_sourcing_signal_alibaba_no_results(monkeypatch):
@@ -226,7 +231,7 @@ def test_fetch_sourcing_signal_alibaba_no_results(monkeypatch):
         "alibaba_apify_actor_id": "some/actor", "alibaba_max_charge_usd": 0.05})())
     monkeypatch.setattr(
         alibaba, "run_actor",
-        lambda actor_id, run_input, max_items=None, max_charge_usd=None: iter([]),
+        lambda actor_id, run_input, max_items=None, max_charge_usd=None, **kwargs: iter([]),
     )
     with pytest.raises(alibaba.AlibabaProviderError):
         alibaba.fetch_sourcing_signal("https://www.alibaba.com/product-detail/thing_123.html")
@@ -237,6 +242,23 @@ def test_fetch_sourcing_signal_alibaba_missing_actor(monkeypatch):
 
     monkeypatch.setattr(alibaba, "settings", type("S", (), {
         "alibaba_apify_actor_id": "", "alibaba_max_charge_usd": 0.05})())
+    with pytest.raises(alibaba.AlibabaProviderError):
+        alibaba.fetch_sourcing_signal("https://www.alibaba.com/product-detail/thing_123.html")
+
+
+def test_fetch_sourcing_signal_alibaba_wraps_non_collector_errors(monkeypatch):
+    """Finding 1: cualquier excepcion de apify_client (no solo CollectorError) debe
+    quedar envuelta en AlibabaProviderError, para que enrichment.py pueda capturarla
+    sin perder el resultado de Amazon en el mismo analyze()."""
+    from app.services.providers import alibaba
+
+    monkeypatch.setattr(alibaba, "settings", type("S", (), {
+        "alibaba_apify_actor_id": "some/actor", "alibaba_max_charge_usd": 0.05})())
+
+    def raise_plain_exception(actor_id, run_input, max_items=None, max_charge_usd=None, **kwargs):
+        raise ValueError("apify_client explotó de una forma no prevista")
+
+    monkeypatch.setattr(alibaba, "run_actor", raise_plain_exception)
     with pytest.raises(alibaba.AlibabaProviderError):
         alibaba.fetch_sourcing_signal("https://www.alibaba.com/product-detail/thing_123.html")
 
@@ -290,6 +312,47 @@ def test_analyze_partial_failure(monkeypatch):
         product = s.scalar(select(Product).where(Product.id == product_id))
         assert product.enrichment.sourcing_price_unit == 1.5
         assert product.enrichment.amazon_price is None
+
+    # Cleanup: evitar contaminar la base compartida de tests
+    with session_scope() as s:
+        s.execute(delete(ProductEnrichment).where(ProductEnrichment.product_id == product_id))
+        s.execute(delete(Product).where(Product.id == product_id))
+        s.flush()
+
+
+def test_analyze_normalizes_non_string_and_oversized_fields(monkeypatch):
+    """Finding 2: el valor devuelto por un provider puede no ser un string (p.ej. un dict
+    anidado) o exceder el ancho de la columna. enrichment.analyze() debe normalizarlo a
+    string y truncarlo antes de asignarlo al modelo, para que el commit no falle."""
+    from sqlalchemy import select
+
+    from app.db import Product, init_db, session_scope
+    from app.services import enrichment
+    from app.services.providers import aliexpress, amazon
+
+    init_db()
+    overlong_supplier = {"seller": {"name": "x" * 500}}
+    monkeypatch.setattr(amazon, "fetch_amazon_signal",
+                        lambda url: (_ for _ in ()).throw(amazon.AmazonProviderError("sin llave")))
+    monkeypatch.setattr(aliexpress, "fetch_sourcing_signal",
+                        lambda url: {"price_unit": 2.5, "supplier_name": overlong_supplier, "moq": None, "raw": {}})
+
+    with session_scope() as s:
+        product = Product(slug=slugify("producto analyze normaliza tipos"), name="producto analyze normaliza tipos")
+        s.add(product)
+        s.flush()
+        result = enrichment.analyze(product, "https://amazon.com/dp/B0D1XCVTPB",
+                                    "https://aliexpress.com/item/123.html")
+        product_id = product.id
+
+    assert result["sourcing"]["status"] == "ok"
+
+    with session_scope() as s:
+        product = s.scalar(select(Product).where(Product.id == product_id))
+        saved = product.enrichment.sourcing_supplier_name
+        assert isinstance(saved, str)
+        assert len(saved) <= 200
+        assert saved == str(overlong_supplier)[:200]
 
     # Cleanup: evitar contaminar la base compartida de tests
     with session_scope() as s:

@@ -33,9 +33,11 @@ def fetch_sourcing_signal(url: str) -> dict:
         raise AlibabaProviderError("Falta ALIBABA_APIFY_ACTOR_ID en .env")
     try:
         items = list(run_actor(settings.alibaba_apify_actor_id, build_input(url), max_items=1,
-                               max_charge_usd=settings.alibaba_max_charge_usd))
+                               max_charge_usd=settings.alibaba_max_charge_usd, run_timeout_secs=45))
     except CollectorError as exc:
         raise AlibabaProviderError(str(exc)) from exc
+    except Exception as exc:
+        raise AlibabaProviderError(f"Error al consultar Alibaba: {exc}") from exc
     if not items:
         raise AlibabaProviderError("Alibaba no devolvió datos para ese link")
     return map_item(items[0])

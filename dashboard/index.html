@@ -102,7 +102,7 @@ select { border: 1px solid var(--line); background: var(--panel); border-radius:
 h3 { font: 600 14px/1.3 var(--body); margin: 0 0 12px; }
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 label { display: grid; gap: 5px; font-size: 13px; color: var(--muted); }
-input[type=number], textarea { border: 1px solid var(--line); background: var(--paper); border-radius: var(--r-sm); padding: 8px 10px; width: 100%; }
+input[type=number], input[type=url], textarea { border: 1px solid var(--line); background: var(--paper); border-radius: var(--r-sm); padding: 8px 10px; width: 100%; }
 textarea { min-height: 70px; resize: vertical; }
 .margin { margin: 12px 0 14px; font-size: 14px; }
 .margin b { font-family: var(--display); font-size: 20px; }
@@ -378,8 +378,12 @@ function renderDetail(p) {
       const result = await api(`/api/products/${p.id}/analyze`, { method: "POST", body: JSON.stringify({
         amazon_url: amazonUrl || null, sourcing_url: sourcingUrl || null }) });
       const errors = [result.amazon, result.sourcing].filter((r) => r.status === "error").map((r) => r.message);
-      if (errors.length) { msg.textContent = errors.join(" · "); msg.style.color = "var(--danger)"; btn.disabled = false; }
-      else { await selectProduct(p.id); }
+      await selectProduct(p.id);
+      if (errors.length) {
+        const freshForm = $("analyze-form"), freshMsg = $("an-msg");
+        if (freshForm) freshForm.hidden = false;
+        if (freshMsg) { freshMsg.textContent = errors.join(" · "); freshMsg.style.color = "var(--danger)"; }
+      }
     } catch (err) { msg.textContent = `No se pudo analizar: ${err.message}`; msg.style.color = "var(--danger)"; btn.disabled = false; }
   });
 
