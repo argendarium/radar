@@ -39,6 +39,11 @@ def test_detect_source_unknown_raises():
         detect_source("https://example.com/producto")
 
 
+def test_detect_source_rejects_lookalike_domain():
+    with pytest.raises(UrlError):
+        detect_source("https://www.not-amazon.com/dp/B0D1XCVTPB")
+
+
 def test_extract_amazon_asin():
     assert extract_amazon_asin("https://www.amazon.com/PHOFAY-Spray/dp/B0D1XCVTPB/ref=sr_1_1") == "B0D1XCVTPB"
     assert extract_amazon_asin("https://www.amazon.com/gp/product/B0D1XCVTPB") == "B0D1XCVTPB"

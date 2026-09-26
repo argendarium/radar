@@ -11,11 +11,12 @@ class UrlError(ValueError):
 
 def detect_source(url: str) -> str:
     host = urlparse(url).netloc.lower()
-    if "amazon." in host:
+    labels = host.split(".")
+    if "amazon" in labels:
         return "amazon"
-    if "aliexpress." in host:
+    if "aliexpress" in labels:
         return "aliexpress"
-    if "alibaba." in host:
+    if "alibaba" in labels:
         return "alibaba"
     raise UrlError(f"No reconozco el sitio de este link: {url}")
 
