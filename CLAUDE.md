@@ -70,3 +70,5 @@ Sin make: `python -m venv .venv && .venv/bin/pip install -r requirements.txt` y 
 2. Postgres + `psycopg[binary]` y docker compose con un contenedor por servicio
 3. Aprendizaje: usar resultados de productos en prueba (estado ganador o descartado) para recalibrar pesos del score
 4. Análisis de comentarios de anuncios para medir intención de compra
+
+Nota de este proyecto en el vault: 01-proyectos/radar-productos.md

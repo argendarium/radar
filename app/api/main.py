@@ -53,7 +53,8 @@ def product_detail(p: Product) -> dict:
         "supplier_cost_usd": p.supplier_cost_usd, "sale_price_dop": p.sale_price_dop, "notes": p.notes,
         "usd_to_dop": settings.usd_to_dop,
         "ads": [
-            {"id": a.id, "source": a.source, "country": a.country, "advertiser": a.advertiser, "text": a.text,
+            {"id": a.id, "source": a.source, "external_id": a.external_id, "country": a.country,
+             "advertiser": a.advertiser, "text": a.text,
              "image_url": a.image_url, "video_url": a.video_url, "landing_url": a.landing_url,
              "likes": a.likes, "comments": a.comments, "started_at": _iso(a.started_at),
              "last_seen": _iso(a.last_seen), "is_active": a.is_active}

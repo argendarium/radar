@@ -56,7 +56,7 @@ class Settings:
     max_normalize_per_run: int = _int("MAX_NORMALIZE_PER_RUN", 40)
 
     # Negocio
-    usd_to_dop: float = _float("USD_TO_DOP", 60.0)  # Actualizar a la tasa real
+    usd_to_dop: float = _float("USD_TO_DOP", 59.0)  # Actualizar a la tasa real
 
     # Pesos del score (deben sumar 1.0)
     w_longevity: float = _float("W_LONGEVITY", 0.35)

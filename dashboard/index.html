@@ -114,13 +114,25 @@ textarea { min-height: 70px; resize: vertical; }
 .hooks li { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 8px 10px; background: var(--paper); border-radius: var(--r-sm); }
 .link { background: none; border: 0; color: var(--signal); cursor: pointer; padding: 0; font-size: 13px; font-weight: 500; text-decoration: none; }
 .ads { display: grid; gap: 12px; }
-.ad { display: grid; grid-template-columns: 56px 1fr; gap: 12px; }
+.ad { display: grid; grid-template-columns: 56px 1fr; gap: 12px; border-radius: var(--r-sm); padding: 6px; margin: -6px; cursor: pointer; }
+.ad:hover { background: var(--paper); }
 .ad .thumb { width: 56px; height: 56px; }
 .ad p { margin: 4px 0 6px; font-size: 13.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .ad .meta { font-size: 13px; display: flex; gap: 12px; flex-wrap: wrap; }
 .empty { padding: 48px 24px; text-align: center; color: var(--muted); }
 .empty h2 { font: 700 20px var(--display); color: var(--ink); margin: 0 0 6px; }
 .back { display: none; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; padding: 20px; z-index: 50; }
+.modal-overlay[hidden] { display: none; }
+.modal { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); max-width: 560px; width: 100%; max-height: calc(100vh - 40px); overflow: auto; position: relative; padding: 22px; }
+.modal-close { position: absolute; top: 12px; right: 12px; background: var(--soft); border: 0; width: 30px; height: 30px; border-radius: 999px; cursor: pointer; font-size: 15px; color: var(--muted); line-height: 1; }
+.modal-close:hover { color: var(--ink); }
+.modal-media { width: 100%; height: 200px; max-height: 320px; object-fit: contain; border-radius: var(--r-sm); background: var(--soft); margin-bottom: 16px; display: grid; place-items: center; font: 700 44px var(--display); color: var(--muted); }
+.modal-media[src] { display: block; height: auto; }
+.modal-text { white-space: pre-wrap; font-size: 14.5px; line-height: 1.5; margin: 14px 0; }
+.modal-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.modal-links .btn { text-decoration: none; display: inline-block; }
 
 @media (max-width: 980px) {
   .shell { padding: 20px 16px 48px; }
@@ -192,6 +204,13 @@ textarea { min-height: 70px; resize: vertical; }
   </main>
 </div>
 
+<div class="modal-overlay" id="ad-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Detalle del anuncio">
+    <button class="modal-close" type="button" id="ad-modal-close" aria-label="Cerrar">✕</button>
+    <div id="ad-modal-body"></div>
+  </div>
+</div>
+
 <script>
 const STATUS_LABEL = { candidato: "Candidato", en_prueba: "En prueba", ganador: "Ganador", descartado: "Descartado" };
 const SIGNALS = [
@@ -202,7 +221,7 @@ const SIGNALS = [
 ];
 const JOB_LABEL = { pipeline: "Búsqueda de productos", score: "Recálculo de score", "collect-meta": "Colector Meta",
   "collect-tiktok": "Colector TikTok", normalize: "Normalización", notify: "Alerta" };
-const state = { status: "", country: "", q: "", selected: null, products: [], polling: null };
+const state = { status: "", country: "", q: "", selected: null, products: [], polling: null, currentAds: [] };
 
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -304,11 +323,13 @@ function renderDetail(p) {
         const days = a.started_at ? Math.max(0, Math.round((new Date(a.last_seen) - new Date(a.started_at)) / 864e5)) : null;
         const links = [safeUrl(a.landing_url) && `<a class="link" href="${esc(a.landing_url)}" target="_blank" rel="noopener noreferrer">Abrir tienda</a>`,
           safeUrl(a.video_url) && `<a class="link" href="${esc(a.video_url)}" target="_blank" rel="noopener noreferrer">Ver video</a>`].filter(Boolean).join("");
-        return `<div class="ad">${thumb(a.image_url, a.advertiser)}<div>
+        return `<div class="ad" data-ad="${a.id}" tabindex="0" role="button" aria-label="Ver anuncio completo de ${esc(a.advertiser || "anunciante")}">${thumb(a.image_url, a.advertiser)}<div>
           <div class="meta"><strong>${esc(a.advertiser || "Anunciante sin nombre")}</strong><span class="hint">${esc([a.country, a.source, days != null ? `${days} días` : ""].filter(Boolean).join(", "))}</span></div>
           ${a.text ? `<p>${esc(a.text)}</p>` : ""}<div class="meta">${links}</div></div></div>`;
       }).join("")}</div>
     </div>`;
+
+  state.currentAds = p.ads;
 
   const updateMargin = () => {
     const cost = parseFloat($("f-cost").value), price = parseFloat($("f-price").value);
@@ -347,6 +368,28 @@ function renderDetail(p) {
   }));
   $("back").addEventListener("click", () => { grid.classList.remove("has-detail"); state.selected = null; renderRows(); });
 }
+
+function openAdModal(ad) {
+  const days = ad.started_at ? Math.max(0, Math.round((new Date(ad.last_seen) - new Date(ad.started_at)) / 864e5)) : null;
+  const meta = [ad.country, ad.source, days != null ? `${days} días activo` : ""].filter(Boolean).join(" · ");
+  const libraryUrl = ad.source === "meta" && ad.external_id
+    ? `https://www.facebook.com/ads/library/?id=${encodeURIComponent(ad.external_id)}` : "";
+  const links = [
+    safeUrl(ad.landing_url) && `<a class="btn" href="${esc(ad.landing_url)}" target="_blank" rel="noopener noreferrer">Abrir tienda</a>`,
+    safeUrl(ad.video_url) && `<a class="btn" href="${esc(ad.video_url)}" target="_blank" rel="noopener noreferrer">Ver video</a>`,
+    libraryUrl && `<a class="btn" href="${esc(libraryUrl)}" target="_blank" rel="noopener noreferrer">Ver anuncio original</a>`,
+  ].filter(Boolean).join("");
+  $("ad-modal-body").innerHTML = `
+    ${thumb(ad.image_url, ad.advertiser, "modal-media")}
+    <h3 style="margin:0 0 4px">${esc(ad.advertiser || "Anunciante sin nombre")}</h3>
+    <div class="hint">${esc(meta)}</div>
+    ${ad.text ? `<p class="modal-text">${esc(ad.text)}</p>` : ""}
+    <div class="modal-links">${links || '<span class="hint">Sin enlaces disponibles</span>'}</div>
+  `;
+  $("ad-modal").hidden = false;
+  $("ad-modal-close").focus();
+}
+function closeAdModal() { $("ad-modal").hidden = true; }
 
 async function selectProduct(id) {
   state.selected = id; renderRows();
@@ -421,6 +464,23 @@ async function startJob(kind) {
 }
 
 $("rows").addEventListener("click", (e) => { const r = e.target.closest(".row"); if (r) selectProduct(Number(r.dataset.id)); });
+$("detail").addEventListener("click", (e) => {
+  if (e.target.closest("a")) return;
+  const card = e.target.closest(".ad");
+  if (!card) return;
+  const ad = (state.currentAds || []).find((x) => x.id === Number(card.dataset.ad));
+  if (ad) openAdModal(ad);
+});
+$("detail").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const card = e.target.closest(".ad"); if (!card) return;
+  e.preventDefault();
+  const ad = (state.currentAds || []).find((x) => x.id === Number(card.dataset.ad));
+  if (ad) openAdModal(ad);
+});
+$("ad-modal-close").addEventListener("click", closeAdModal);
+$("ad-modal").addEventListener("click", (e) => { if (e.target.id === "ad-modal") closeAdModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("ad-modal").hidden) closeAdModal(); });
 $("status-seg").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   state.status = b.dataset.status;

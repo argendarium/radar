@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 
 from app.collectors.meta import map_item
+from app.config import settings
 from app.mapping import pick, slugify, to_datetime, to_int
 from app.services.normalizer import _parse_json
 from app.services.scorer import AdSignal, compute
@@ -28,10 +29,10 @@ def test_sizes_penalty():
 
 def test_margin_adjusts_viability():
     ads = [_ad("t1", 10)]
-    good = compute(ads, 6, cost_usd=5, sale_price_dop=1500)   # 5x
-    bad = compute(ads, 6, cost_usd=20, sale_price_dop=1500)   # 1.25x
+    good = compute(ads, 6, cost_usd=5, sale_price_dop=1500)   # ~5x at current USD_TO_DOP
+    bad = compute(ads, 6, cost_usd=20, sale_price_dop=1500)   # ~1.25x
     assert good["s_viability"] > bad["s_viability"]
-    assert good["margin_ratio"] == 5.0
+    assert good["margin_ratio"] == round(1500 / (5 * settings.usd_to_dop), 2)
 
 
 def test_mapping_helpers():
@@ -68,7 +69,8 @@ def test_api_flow():
         assert top["score"] >= products[-1]["score"]
         updated = client.patch(f"/api/products/{top['id']}",
                                json={"status": "en_prueba", "supplier_cost_usd": 4, "sale_price_dop": 1800}).json()
-        assert updated["status"] == "en_prueba" and updated["margin_ratio"] == 7.5
+        assert updated["status"] == "en_prueba"
+        assert updated["margin_ratio"] == round(1800 / (4 * settings.usd_to_dop), 2)
         assert client.patch(f"/api/products/{top['id']}", json={"status": "otro"}).status_code == 422
         assert client.get("/api/products", params={"status": "en_prueba"}).json()[0]["id"] == top["id"]
         mx = client.get("/api/products", params={"country": "MX"}).json()
